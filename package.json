@@ -12,6 +12,7 @@
     "express": "^4.15.4",
     "express-ws": "^3.0.0",
     "node-pty": "^0.7.0",
-    "os-utils": "0.0.14"
+    "os-utils": "0.0.14",
+    "node-windows": "0.1.14"
   }
 }
