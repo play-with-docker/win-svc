@@ -28,12 +28,11 @@ app.post('/terminals/:id', function (req, res) {
 
   console.log('Created terminal ' + id + ' with PID: ' + term.pid);
   terminals[id] = term;
-    /*
   logs[id] = '';
-  term.on('data', function(data) {
-    logs[term.pid] += data;
-  });
-  */
+  term.fillCB = function(data) {
+    logs[id] += data;
+  }
+  term.on('data', term.fillCB);
   res.end();
 });
 
@@ -56,7 +55,13 @@ app.ws('/terminals/:id', function (ws, req) {
   let id = req.params.id;
   var term = terminals[id];
   console.log('Connected to terminal ' + id);
-  //ws.send(logs[term.pid]);
+
+  if (term.fillCB && logs[id]) {
+    ws.send(logs[id]);
+    term.removeListener('data', term.fillCB);
+    term.fillCB = null;
+    logs[id] = '';
+  }    
 
   ws.fillCallback = function(data) {
     try {
