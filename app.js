@@ -1,11 +1,14 @@
+var bodyParser = require('body-parser');
 var express = require('express');
 var app = express();
+app.use(bodyParser.json());
 var expressWs = require('express-ws')(app);
 var os = require('os');
 var pty = require('node-pty');
 var fs = require('fs');
 var path = require('path');
 var osu = require('os-utils');
+const { spawn } = require('child_process');
 
 var terminals = {},
     logs = {};
@@ -61,7 +64,7 @@ app.ws('/terminals/:id', function (ws, req) {
     term.removeListener('data', term.fillCB);
     term.fillCB = null;
     logs[id] = '';
-  }    
+  }
 
   ws.fillCallback = function(data) {
     try {
@@ -79,6 +82,7 @@ app.ws('/terminals/:id', function (ws, req) {
       term.removeListener('data', ws.fillCallback);
   });
 });
+
 app.post('/terminals/:id/uploads', function(req, res) {
     let id = req.params.id;
     var term = terminals[id];
@@ -97,6 +101,30 @@ app.post('/terminals/:id/uploads', function(req, res) {
     req.on('end', function() {
         ws.end();
         res.end();
+    });
+});
+
+app.post('/exec', function(req, res) {
+    let cmd = req.body.cmd;
+
+    const command = cmd.shift();
+    const args = cmd;
+
+    const exec = spawn(command, args);
+
+    let stdout = '';
+    let stderr = '';
+    exec.stdout.on('data', (data) => {
+        stdout += data;
+    });
+    exec.stderr.on('data', (data) => {
+        stderr += data;
+    });
+    exec.on('error', (err) => {
+        res.json({exit_code: -1, error: err, stdout: stdout, stderr: stderr});
+    });
+    exec.on('exit', (code) => {
+        res.json({exit_code: code, stdout: stdout, stderr: stderr});
     });
 });
 
