@@ -9,9 +9,11 @@ var fs = require('fs');
 var path = require('path');
 var osu = require('os-utils');
 const { spawn } = require('child_process');
+const uuidv4 = require('uuid/v4');
 
 var terminals = {},
-    logs = {};
+    logs = {},
+    clients = {};
 
 app.post('/terminals/:id', function (req, res) {
   let id = req.params.id;
@@ -19,12 +21,17 @@ app.post('/terminals/:id', function (req, res) {
       res.end();
       return
   }
-  var cols = parseInt(req.query.cols),
-      rows = parseInt(req.query.rows),
+  launchTerminal(id);
+  res.end();
+});
+
+function launchTerminal(id) {
+  var cols = parseInt(cols),
+      rows = parseInt(rows),
       term = pty.spawn('powershell.exe', [], {
         name: 'xterm-color',
-        cols: cols || 80,
-        rows: rows || 24,
+        cols: 80,
+        rows: 24,
         cwd: 'C:\\',
         env: process.env
       });
@@ -32,12 +39,31 @@ app.post('/terminals/:id', function (req, res) {
   console.log('Created terminal ' + id + ' with PID: ' + term.pid);
   terminals[id] = term;
   logs[id] = '';
-  term.fillCB = function(data) {
-    logs[id] += data;
-  }
-  term.on('data', term.fillCB);
-  res.end();
-});
+  term.on('data', (data) => {
+      logs[id] += data;
+      if (logs[id].length > 10000) {
+        logs[id] = logs[id].substr(logs[id].length - 10000);
+      }
+  });
+  term.on('close', function() {
+    console.log('Exited terminal ' + id + '. Recreating');
+    let newTerm = launchTerminal(id);
+    if (clients[id]) {
+        let subscribers = clients[id];
+        for (var id in subscribers) {
+            let ws = subscribers[id];
+            connectWS(ws, id, newTerm);
+        }
+    }
+  });
+  return term;
+}
+
+function connectWS(ws, termId, term) {
+  ws.send(logs[termId]);
+  ws.term = term;
+  term.on('data', ws.fill);
+}
 
 app.post('/terminals/:id/size', function (req, res) {
   var id = req.params.id,
@@ -54,33 +80,39 @@ app.post('/terminals/:id/size', function (req, res) {
   res.end();
 });
 
+
 app.ws('/terminals/:id', function (ws, req) {
+  ws.id = uuidv4();
   let id = req.params.id;
   var term = terminals[id];
-  console.log('Connected to terminal ' + id);
 
-  if (term.fillCB && logs[id]) {
-    ws.send(logs[id]);
-    term.removeListener('data', term.fillCB);
-    term.fillCB = null;
-    logs[id] = '';
+  console.log('Client ' + ws.id + ' connected to terminal ' + id);
+  if (!clients[id]) {
+      clients[id] = {};
   }
+  clients[id][ws.id] = ws;
 
-  ws.fillCallback = function(data) {
+  ws.fill = function(data) {
     try {
       ws.send(data);
     } catch (ex) {
       // The WebSocket is not open, ignore
     }
   }
-  term.on('data', ws.fillCallback);
   ws.on('message', function(msg) {
-    term.write(msg);
+    if (ws.term) {
+        try {
+            ws.term.write(msg);
+        } catch(ex) {
+        }
+    }
   });
   ws.on('close', function () {
-      console.log('client disconnected from terminal ' + term.pid);
-      term.removeListener('data', ws.fillCallback);
+      console.log('client disconnected from terminal ' + ws.term.pid);
+      ws.term.removeListener('data', ws.fill);
+      delete clients[id][ws.id];
   });
+  connectWS(ws, term);
 });
 
 app.post('/terminals/:id/uploads', function(req, res) {
