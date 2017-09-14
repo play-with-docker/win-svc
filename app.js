@@ -37,6 +37,7 @@ function launchTerminal(id) {
       });
 
   console.log('Created terminal ' + id + ' with PID: ' + term.pid);
+  term.id = id;
   terminals[id] = term;
   logs[id] = '';
   term.on('data', (data) => {
@@ -45,14 +46,14 @@ function launchTerminal(id) {
         logs[id] = logs[id].substr(logs[id].length - 10000);
       }
   });
-  term.on('close', function() {
-    console.log('Exited terminal ' + id + '. Recreating');
-    let newTerm = launchTerminal(id);
-    if (clients[id]) {
-        let subscribers = clients[id];
+  term.on('exit', function() {
+    console.log('Exited terminal ' + term.id + '. Recreating');
+    let newTerm = launchTerminal(term.id);
+    if (clients[term.id]) {
+        let subscribers = clients[term.id];
         for (var id in subscribers) {
             let ws = subscribers[id];
-            connectWS(ws, id, newTerm);
+            connectWS(ws, term.id, newTerm);
         }
     }
   });
@@ -108,11 +109,13 @@ app.ws('/terminals/:id', function (ws, req) {
     }
   });
   ws.on('close', function () {
-      console.log('client disconnected from terminal ' + ws.term.pid);
-      ws.term.removeListener('data', ws.fill);
+      if (ws.term) {
+	console.log('client disconnected from terminal ' + ws.term.pid);
+        ws.term.removeListener('data', ws.fill);
+      }
       delete clients[id][ws.id];
   });
-  connectWS(ws, term);
+  connectWS(ws, id, term);
 });
 
 app.post('/terminals/:id/uploads', function(req, res) {
