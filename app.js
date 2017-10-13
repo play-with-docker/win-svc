@@ -103,6 +103,7 @@ app.ws('/terminals/:id', function (ws, req) {
   ws.on('message', function(msg) {
     if (ws.term) {
         try {
+            msg = msg.replace(/\n/g, '\r');
             ws.term.write(msg);
         } catch(ex) {
         }
