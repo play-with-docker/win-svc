@@ -175,4 +175,5 @@ var port = process.env.PORT || 222,
     host = '0.0.0.0';
 
 console.log('App listening to http://' + host + ':' + port);
-app.listen(port, host);
+const server = app.listen(port, host);
+server.timeout = 600000;
